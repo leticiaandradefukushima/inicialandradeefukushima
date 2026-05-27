@@ -256,6 +256,7 @@ const btn = { display: "inline-flex", alignItems: "center", gap: "6px", padding:
 const btnOutline = { ...btn, background: "transparent", color: C.navy, border: `1.5px solid ${C.navy}` };
 const btnRed = { ...btnOutline, color: C.red, border: `1.5px solid ${C.red}` };
 const btnBlue = { ...btn, background: C.blue };
+const btnOrange = { ...btn, background: "#C2410C" };
 const card = { background: C.white, borderRadius: "6px", border: `1px solid ${C.border}`, overflow: "hidden", marginBottom: "16px" };
 const cardHeader = { background: C.navy, color: C.white, padding: "12px 18px", fontSize: "11px", fontFamily: font.sans, letterSpacing: "1.5px", textTransform: "uppercase", fontWeight: "700" };
 const cardBody = { padding: "18px" };

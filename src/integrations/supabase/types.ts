@@ -14,7 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      jurisprudencias: {
+        Row: {
+          categoria: string
+          conteudo: string
+          created_at: string
+          uf: string
+          updated_at: string
+        }
+        Insert: {
+          categoria: string
+          conteudo?: string
+          created_at?: string
+          uf: string
+          updated_at?: string
+        }
+        Update: {
+          categoria?: string
+          conteudo?: string
+          created_at?: string
+          uf?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      modelos_peticoes: {
+        Row: {
+          conteudo: string
+          created_at: string
+          tese: string
+          updated_at: string
+        }
+        Insert: {
+          conteudo?: string
+          created_at?: string
+          tese: string
+          updated_at?: string
+        }
+        Update: {
+          conteudo?: string
+          created_at?: string
+          tese?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

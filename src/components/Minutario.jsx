@@ -844,7 +844,7 @@ export default function Minutario() {
                     <div style={{ fontSize: "15px", marginBottom: "6px", color: C.textMid }}>Pronto para gerar</div>
                     <div style={{ fontSize: "13px" }}>Preencha os dados e clique em <strong>Gerar Petição Inicial</strong></div>
                     <div style={{ fontSize: "11px", marginTop: "10px", color: C.textLight }}>
-                      Dica: Anexe documentos e use a IA para preencher automaticamente
+                      Dica: após gerar, use <strong>Emitir Petição em Word/PDF</strong> para baixar a peça diagramada no padrão do escritório
                     </div>
                   </div>
                 )}

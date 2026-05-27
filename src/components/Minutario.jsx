@@ -321,6 +321,10 @@ export default function Minutario() {
   const [isEmitting, setIsEmitting] = useState(null); // null | "docx" | "pdf"
   const [emitMsg, setEmitMsg] = useState("");
 
+  // Importar Dados
+  const [importText, setImportText] = useState("");
+  const [importMsg, setImportMsg] = useState("");
+
   // Carrega dados do banco ao iniciar
   useEffect(() => {
     (async () => {
@@ -489,8 +493,209 @@ export default function Minutario() {
   const copy = () => { navigator.clipboard.writeText(preview); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const availableStatesForJuri = BR_STATES.filter((s) => !juris[s.uf]);
 
+  // Parsing function for import feature
+  const parseAndFillForm = () => {
+    if (!importText.trim()) {
+      setImportMsg("Por favor, cole o texto para importar.");
+      return;
+    }
+
+    try {
+      const text = importText.toUpperCase();
+      const fieldsFound = [];
+      const updatedForm = { ...form };
+
+      // Helper to extract value after patterns
+      const extractAfter = (pattern, endPattern = null) => {
+        const regex = endPattern
+          ? new RegExp(`${pattern}[:\\s]+([^]*?)(?=${endPattern}|$)`, "i")
+          : new RegExp(`${pattern}[:\\s]+([^\\n]+)`, "i");
+        const match = text.match(regex);
+        return match ? match[1].trim() : null;
+      };
+
+      // Helper to find numbers in text
+      const findNumbers = (pattern) => {
+        const regex = new RegExp(`${pattern}[:\\s]*([0-9.,]+)`, "i");
+        const match = text.match(regex);
+        return match ? match[1].trim() : null;
+      };
+
+      // Plaintiff data
+      const nomeMatch = text.match(/(?:AUTOR|CLIENTE|CREDOR|REQUERENTE)[:\s]+([A-Z][A-Z\s]+?)(?:RG|CPF|DOC|$)/);
+      if (nomeMatch) {
+        updatedForm.nome = nomeMatch[1].trim();
+        fieldsFound.push("nome");
+      }
+
+      const rgMatch = text.match(/RG[:\s#]*(\d+[.\d-]*)/);
+      if (rgMatch) {
+        updatedForm.rg = rgMatch[1].trim();
+        fieldsFound.push("rg");
+      }
+
+      const cpfMatch = text.match(/CPF[:\s]*(\d+[.\d-]*)/);
+      if (cpfMatch) {
+        updatedForm.cpf = cpfMatch[1].trim();
+        fieldsFound.push("cpf");
+      }
+
+      const enderecoMatch = text.match(/(?:ENDEREÇO|ENDERECO|DOMICÍLIO)[:\s]+([^\\n]+)/);
+      if (enderecoMatch) {
+        updatedForm.endereco = enderecoMatch[1].trim();
+        fieldsFound.push("endereco");
+      }
+
+      // Bank/Defendant data
+      const bancoMatch = text.match(/(?:BANCO|INSTITUIÇÃO)[:\s]+([A-Z][A-Z\s]*?)(?:CNPJ|$)/i);
+      if (bancoMatch) {
+        const bancoParse = bancoMatch[1].trim();
+        if (BANK_CNPJ[bancoParse]) {
+          updatedForm.banco = bancoParse;
+          updatedForm.cnpjBanco = BANK_CNPJ[bancoParse];
+          fieldsFound.push("banco", "cnpjBanco");
+        }
+      }
+
+      const cnpjBancoMatch = text.match(/CNPJ[:\s]*(\d+[.\d\/-]*)/);
+      if (cnpjBancoMatch) {
+        updatedForm.cnpjBanco = cnpjBancoMatch[1].trim();
+        fieldsFound.push("cnpjBanco");
+      }
+
+      // Contract/Vehicle data
+      const numeroContratoMatch = text.match(/(?:CONTRATO|NÚMERO)[:\s#]*(\d+[\/.\d-]*)/);
+      if (numeroContratoMatch) {
+        updatedForm.numeroContrato = numeroContratoMatch[1].trim();
+        fieldsFound.push("numeroContrato");
+      }
+
+      const dataContratoMatch = text.match(/(?:DATA DO CONTRATO|DATA CONTRATO)[:\s]*(\d+[\/.\s\-a-záéíóúã]+)/i);
+      if (dataContratoMatch) {
+        updatedForm.dataContrato = dataContratoMatch[1].trim();
+        fieldsFound.push("dataContrato");
+      }
+
+      const veiculoMatch = text.match(/(?:VEÍCULO|VEICULO)[:\s]+([A-Z0-9\s\-]+?)(?:ANO|$)/i);
+      if (veiculoMatch) {
+        updatedForm.veiculo = veiculoMatch[1].trim();
+        fieldsFound.push("veiculo");
+      }
+
+      const anoMatch = text.match(/(?:ANO|YEAR)[:\s]*(\d{4})/);
+      if (anoMatch) {
+        updatedForm.anoVeiculo = anoMatch[1].trim();
+        fieldsFound.push("anoVeiculo");
+      }
+
+      // Financial data
+      const valorPrincipalMatch = findNumbers("VALOR PRINCIPAL|PRINCIPAL");
+      if (valorPrincipalMatch) {
+        updatedForm.valorPrincipal = valorPrincipalMatch;
+        fieldsFound.push("valorPrincipal");
+      }
+
+      const valorTotalMatch = findNumbers("VALOR TOTAL|TOTAL");
+      if (valorTotalMatch) {
+        updatedForm.valorTotal = valorTotalMatch;
+        fieldsFound.push("valorTotal");
+      }
+
+      const taxaJurosMesMatch = findNumbers("TAXA.*MÊS|TAXA.*MES|TAXA MENSAL");
+      if (taxaJurosMesMatch) {
+        updatedForm.taxaJurosMes = taxaJurosMesMatch;
+        fieldsFound.push("taxaJurosMes");
+      }
+
+      const taxaJurosAnoMatch = findNumbers("TAXA.*ANO|TAXA ANUAL");
+      if (taxaJurosAnoMatch) {
+        updatedForm.taxaJurosAno = taxaJurosAnoMatch;
+        fieldsFound.push("taxaJurosAno");
+      }
+
+      const cetMatch = findNumbers("CET");
+      if (cetMatch) {
+        updatedForm.cet = cetMatch;
+        fieldsFound.push("cet");
+      }
+
+      const qtdParcelasMatch = text.match(/(?:PARCELA|QTD|QUANTIDADE)[:\s]*(\d+)/);
+      if (qtdParcelasMatch) {
+        updatedForm.qtdParcelas = qtdParcelasMatch[1].trim();
+        fieldsFound.push("qtdParcelas");
+      }
+
+      const valorParcelaMatch = findNumbers("VALOR DA PARCELA|VALOR PARCELA|PARCELA");
+      if (valorParcelaMatch) {
+        updatedForm.valorParcela = valorParcelaMatch;
+        fieldsFound.push("valorParcela");
+      }
+
+      // Fees and insurance
+      const tarifaAvaliaoMatch = findNumbers("TARIFA.*AVALIAÇÃO|TARIFA.*AVALIACAO");
+      if (tarifaAvaliaoMatch) {
+        updatedForm.tarifaAvaliacao = tarifaAvaliaoMatch;
+        fieldsFound.push("tarifaAvaliacao");
+      }
+
+      const tarifaCadastroMatch = findNumbers("TARIFA.*CADASTRO");
+      if (tarifaCadastroMatch) {
+        updatedForm.tarifaCadastro = tarifaCadastroMatch;
+        fieldsFound.push("tarifaCadastro");
+      }
+
+      const despesasRegistroMatch = findNumbers("DESPESA|REGISTRO");
+      if (despesasRegistroMatch) {
+        updatedForm.despesasRegistro = despesasRegistroMatch;
+        fieldsFound.push("despesasRegistro");
+      }
+
+      const seguroMatch = findNumbers("SEGURO");
+      if (seguroMatch) {
+        updatedForm.seguro = seguroMatch;
+        fieldsFound.push("seguro");
+      }
+
+      const seguradoraMatch = text.match(/(?:SEGURADORA)[:\s]+([A-Z][A-Z\s]+?)(?:CNPJ|$)/i);
+      if (seguradoraMatch) {
+        updatedForm.seguradora = seguradoraMatch[1].trim();
+        fieldsFound.push("seguradora");
+      }
+
+      // Location/Court data
+      const cidadeMatch = text.match(/(?:CIDADE|DOMICÍLIO|MUNICIPIO)[:\s]+([A-Z][A-Z\s]+?)(?:UF|ESTADO|$)/i);
+      if (cidadeMatch) {
+        updatedForm.cidade = cidadeMatch[1].trim();
+        fieldsFound.push("cidade");
+      }
+
+      const ufMatch = text.match(/(?:UF|ESTADO|STATE)[:\s]*([A-Z]{2})/);
+      if (ufMatch) {
+        updatedForm.uf = ufMatch[1].trim();
+        fieldsFound.push("uf");
+      }
+
+      // Update form
+      setForm(updatedForm);
+
+      // Show success message
+      const msg = `Importação concluída! ${fieldsFound.length} campo(s) preenchido(s): ${fieldsFound.join(", ")}.`;
+      setImportMsg(msg);
+
+      // Clear import text and switch to main tab
+      setTimeout(() => {
+        setImportText("");
+        setActiveTab("gerar");
+      }, 1500);
+    } catch (err) {
+      console.error("Erro na importação:", err);
+      setImportMsg("Erro ao processar o texto. Verifique o formato e tente novamente.");
+    }
+  };
+
   const tabs = [
     { id: "gerar", label: "⚖ Gerar Peça" },
+    { id: "importar", label: "📥 Importar Dados" },
     { id: "modelos", label: "✦ Modelos" },
     { id: "juris", label: "§ Jurisprudências" },
   ];
@@ -849,6 +1054,122 @@ export default function Minutario() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ───────── TAB: IMPORTAR DADOS ───────── */}
+        {activeTab === "importar" && (
+          <div style={{ maxWidth: "820px" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <h2 style={{ fontSize: "20px", margin: "0 0 6px 0" }}>Importar Dados da Petição</h2>
+              <p style={{ color: C.textMid, fontSize: "13px", fontFamily: font.sans, margin: 0 }}>
+                Cole o texto extraído de documentos, e-mails ou sistemas para preencher automaticamente o formulário.
+              </p>
+            </div>
+
+            <div style={{ ...card, marginBottom: "16px" }}>
+              <div style={{ padding: "0 18px 18px 18px" }}>
+                <label style={{ display: "block", fontFamily: font.sans, fontSize: "13px", fontWeight: "600", marginBottom: "8px", color: C.text }}>
+                  Texto a Importar
+                </label>
+                <textarea
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder="Cole aqui o texto extraído dos documentos..."
+                  style={{
+                    width: "100%",
+                    minHeight: "320px",
+                    padding: "12px",
+                    fontFamily: font.sans,
+                    fontSize: "13px",
+                    border: `1px solid ${C.border}`,
+                    borderRadius: "4px",
+                    resize: "vertical",
+                    color: C.text,
+                    lineHeight: "1.6",
+                  }}
+                />
+              </div>
+
+              {importMsg && (
+                <div style={{
+                  padding: "12px 18px",
+                  background: importMsg.includes("Erro") || importMsg.includes("erro")
+                    ? "rgba(192, 57, 43, 0.08)"
+                    : "rgba(45, 138, 79, 0.08)",
+                  borderTop: `1px solid ${C.border}`,
+                  borderRadius: "0 0 4px 4px",
+                  fontFamily: font.sans,
+                  fontSize: "13px",
+                  color: importMsg.includes("Erro") || importMsg.includes("erro")
+                    ? "#c0392b"
+                    : "#2d8a4f",
+                }}>
+                  {importMsg}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-start" }}>
+              <button
+                onClick={parseAndFillForm}
+                style={{
+                  padding: "10px 24px",
+                  background: C.navy,
+                  color: C.white,
+                  border: "none",
+                  borderRadius: "4px",
+                  fontFamily: font.sans,
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.target.style.background = C.orange)}
+                onMouseLeave={(e) => (e.target.style.background = C.navy)}
+              >
+                ✓ Preencher Petição Automaticamente
+              </button>
+              <button
+                onClick={() => {
+                  setImportText("");
+                  setImportMsg("");
+                }}
+                style={{
+                  padding: "10px 24px",
+                  background: C.creamDark,
+                  color: C.text,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: "4px",
+                  fontFamily: font.sans,
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = C.border;
+                  e.target.style.color = C.text;
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = C.creamDark;
+                  e.target.style.color = C.text;
+                }}
+              >
+                ✕ Limpar Texto
+              </button>
+            </div>
+
+            <div style={{ marginTop: "24px", padding: "16px 18px", background: C.cream, border: `1px solid ${C.border}`, borderRadius: "4px", fontFamily: font.sans, fontSize: "12px", color: C.textMid, lineHeight: "1.8" }}>
+              <strong style={{ color: C.text, display: "block", marginBottom: "8px" }}>Dicas para melhor resultado:</strong>
+              <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                <li>Cole textos em português com estrutura clara (dados do cliente, banco, contrato, etc.)</li>
+                <li>O sistema reconhece padrões como "CPF: 123.456.789-00" ou "Contrato: 2024-001"</li>
+                <li>Campos não identificados mantêm seus valores atuais</li>
+                <li>Você pode revisar e ajustar manualmente após a importação</li>
+                <li>Suporta textos de e-mails, documentos scaneados ou extraídos de sistemas</li>
+              </ul>
             </div>
           </div>
         )}

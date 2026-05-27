@@ -402,124 +402,35 @@ export default function Minutario() {
     setForm(p => ({ ...p, banco: b, cnpjBanco: BANK_CNPJ[b] || "" }));
   };
 
-  // ─── Upload de Arquivos ───
-  const handleFiles = (files) => {
-    const arr = Array.from(files).map(file => ({ file, name: file.name, type: file.type }));
-    setUploadedFiles(p => [...p, ...arr]);
-  };
-
-  const removeFile = (idx) => setUploadedFiles(p => p.filter((_, i) => i !== idx));
-
-  // ─── Extração via IA ───
-  const extractWithAI = async () => {
-    if (uploadedFiles.length === 0) { setExtractMsg("⚠ Nenhum documento anexado."); return; }
-    setIsExtracting(true);
-    setExtractMsg("Analisando documentos...");
-
+  // ─── Emissão da Petição (DOCX / PDF) ───
+  const onEmitDocx = async () => {
+    setIsEmitting("docx");
+    setEmitMsg("");
     try {
-      const contents = await Promise.all(uploadedFiles.map(async ({ file }) => {
-        return new Promise((res) => {
-          const r = new FileReader();
-          r.onload = () => res({ name: file.name, type: file.type, b64: r.result.split(",")[1] });
-          r.readAsDataURL(file);
-        });
-      }));
-
-      const docParts = contents.map(c => {
-        if (c.type === "application/pdf") {
-          return { type: "document", source: { type: "base64", media_type: "application/pdf", data: c.b64 } };
-        } else if (c.type.startsWith("image/")) {
-          return { type: "image", source: { type: "base64", media_type: c.type, data: c.b64 } };
-        }
-        return null;
-      }).filter(Boolean);
-
-      if (docParts.length === 0) {
-        setExtractMsg("⚠ Formato não suportado. Use PDF ou imagens.");
-        setIsExtracting(false);
-        return;
-      }
-
-      const prompt = `Você é um especialista em análise de contratos bancários brasileiros. Analise o(s) documento(s) fornecido(s) e extraia todas as informações disponíveis no formato JSON abaixo. Se um campo não for encontrado, retorne null para ele. Retorne APENAS o JSON, sem texto adicional, sem markdown.
-
-{
-  "nome": null,
-  "rg": null,
-  "cpf": null,
-  "endereco": null,
-  "nacionalidade": null,
-  "estadoCivil": null,
-  "profissao": null,
-  "banco": null,
-  "cnpjBanco": null,
-  "enderecoBanco": null,
-  "dataContrato": null,
-  "veiculo": null,
-  "anoVeiculo": null,
-  "numeroContrato": null,
-  "valorPrincipal": null,
-  "valorLiquido": null,
-  "valorTotal": null,
-  "taxaJurosMes": null,
-  "taxaJurosAno": null,
-  "taxaJurosContrMes": null,
-  "taxaJurosContrAno": null,
-  "cet": null,
-  "qtdParcelas": null,
-  "valorParcela": null,
-  "tarifaAvaliacao": null,
-  "despesasRegistro": null,
-  "seguro": null,
-  "tarifaCadastro": null,
-  "seguradora": null,
-  "cnpjSeguradora": null,
-  "taxaBacenMes": null,
-  "taxaBacenAno": null,
-  "parcelaCorreta": null,
-  "valorConsignar": null,
-  "valorPagoMaior": null,
-  "valorRestituir": null,
-  "cidade": null,
-  "uf": null
-}`;
-
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: [...docParts, { type: "text", text: prompt }] }],
-        }),
-      });
-
-      const data = await resp.json();
-      const text = data.content?.map(i => i.text || "").join("") || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      const extracted = JSON.parse(clean);
-
-      setForm(prev => {
-        const updated = { ...prev };
-        Object.entries(extracted).forEach(([k, v]) => {
-          if (v !== null && v !== undefined && String(v).trim() !== "") {
-            updated[k] = String(v);
-          }
-        });
-        // Se banco foi extraído, tenta preencher CNPJ do mapa
-        if (extracted.banco) {
-          const match = BANKS.find(b => extracted.banco.toLowerCase().includes(b.toLowerCase()));
-          if (match) { updated.banco = match; updated.cnpjBanco = BANK_CNPJ[match] || updated.cnpjBanco || ""; }
-        }
-        return updated;
-      });
-
-      setExtractMsg("✓ Dados extraídos com sucesso! Revise e complemente os campos.");
+      await emitirDOCX(form, juris);
+      setEmitMsg("✓ Word gerado com sucesso.");
     } catch (err) {
-      setExtractMsg("⚠ Erro ao processar documentos. Tente novamente.");
       console.error(err);
+      setEmitMsg("⚠ " + (err?.message || "Erro ao gerar Word."));
+    } finally {
+      setIsEmitting(null);
     }
-    setIsExtracting(false);
   };
+
+  const onEmitPdf = async () => {
+    setIsEmitting("pdf");
+    setEmitMsg("");
+    try {
+      await emitirPDF(form, juris);
+      setEmitMsg("✓ Diálogo de impressão aberto. Escolha “Salvar como PDF”.");
+    } catch (err) {
+      console.error(err);
+      setEmitMsg("⚠ " + (err?.message || "Erro ao gerar PDF."));
+    } finally {
+      setIsEmitting(null);
+    }
+  };
+
 
   // ─── Geração da Peça ───
   const gerar = () => {

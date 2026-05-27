@@ -493,7 +493,7 @@ export default function Minutario() {
   const copy = () => { navigator.clipboard.writeText(preview); setCopied(true); setTimeout(() => setCopied(false), 2500); };
   const availableStatesForJuri = BR_STATES.filter((s) => !juris[s.uf]);
 
-  // Parsing function for import feature
+  // Parsing function for import feature - structured report format
   const parseAndFillForm = () => {
     if (!importText.trim()) {
       setImportMsg("Por favor, cole o texto para importar.");
@@ -501,194 +501,197 @@ export default function Minutario() {
     }
 
     try {
-      const text = importText.toUpperCase();
       const fieldsFound = [];
+      const skippedFields = [];
       const updatedForm = { ...form };
 
-      // Helper to extract value after patterns
-      const extractAfter = (pattern, endPattern = null) => {
-        const regex = endPattern
-          ? new RegExp(`${pattern}[:\\s]+([^]*?)(?=${endPattern}|$)`, "i")
-          : new RegExp(`${pattern}[:\\s]+([^\\n]+)`, "i");
-        const match = text.match(regex);
-        return match ? match[1].trim() : null;
-      };
-
-      // Helper to find numbers in text
-      const findNumbers = (pattern) => {
-        const regex = new RegExp(`${pattern}[:\\s]*([0-9.,]+)`, "i");
-        const match = text.match(regex);
-        return match ? match[1].trim() : null;
-      };
-
-      // Plaintiff data
-      const nomeMatch = text.match(/(?:AUTOR|CLIENTE|CREDOR|REQUERENTE)[:\s]+([A-Z][A-Z\s]+?)(?:RG|CPF|DOC|$)/);
-      if (nomeMatch) {
-        updatedForm.nome = nomeMatch[1].trim();
-        fieldsFound.push("nome");
-      }
-
-      const rgMatch = text.match(/RG[:\s#]*(\d+[.\d-]*)/);
-      if (rgMatch) {
-        updatedForm.rg = rgMatch[1].trim();
-        fieldsFound.push("rg");
-      }
-
-      const cpfMatch = text.match(/CPF[:\s]*(\d+[.\d-]*)/);
-      if (cpfMatch) {
-        updatedForm.cpf = cpfMatch[1].trim();
-        fieldsFound.push("cpf");
-      }
-
-      const enderecoMatch = text.match(/(?:ENDEREÇO|ENDERECO|DOMICÍLIO)[:\s]+([^\\n]+)/);
-      if (enderecoMatch) {
-        updatedForm.endereco = enderecoMatch[1].trim();
-        fieldsFound.push("endereco");
-      }
-
-      // Bank/Defendant data
-      const bancoMatch = text.match(/(?:BANCO|INSTITUIÇÃO)[:\s]+([A-Z][A-Z\s]*?)(?:CNPJ|$)/i);
-      if (bancoMatch) {
-        const bancoParse = bancoMatch[1].trim();
-        if (BANK_CNPJ[bancoParse]) {
-          updatedForm.banco = bancoParse;
-          updatedForm.cnpjBanco = BANK_CNPJ[bancoParse];
-          fieldsFound.push("banco", "cnpjBanco");
+      // Parse "Campo: Valor" pairs from the report
+      const reportData = {};
+      const lines = importText.split("\n");
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        const colonIdx = line.indexOf(":");
+        if (colonIdx > 0) {
+          const key = line.substring(0, colonIdx).trim();
+          const val = line.substring(colonIdx + 1).trim();
+          if (key && val !== undefined) {
+            reportData[key.toLowerCase()] = val;
+          }
         }
       }
 
-      const cnpjBancoMatch = text.match(/CNPJ[:\s]*(\d+[.\d\/-]*)/);
-      if (cnpjBancoMatch) {
-        updatedForm.cnpjBanco = cnpjBancoMatch[1].trim();
-        fieldsFound.push("cnpjBanco");
-      }
+      // Check if this looks like a structured report (has at least one known block header)
+      const isStructuredReport = /\b(PROCESSO|AUTOR|BANCO\s*\/\s*R[ÉE]U|CONTRATO\s*\/\s*VE[ÍI]CULO|REVIS[ÃA]O\s*\/\s*LAUDO|SEGURO|FECHAMENTO)\s*:/i.test(importText);
 
-      // Contract/Vehicle data
-      const numeroContratoMatch = text.match(/(?:CONTRATO|NÚMERO)[:\s#]*(\d+[\/.\d-]*)/);
-      if (numeroContratoMatch) {
-        updatedForm.numeroContrato = numeroContratoMatch[1].trim();
-        fieldsFound.push("numeroContrato");
-      }
+      // Helper: get value from report, returns null if NAO IDENTIFICADO or empty
+      const getVal = (keys) => {
+        for (const k of keys) {
+          const v = reportData[k.toLowerCase()];
+          if (v !== undefined && v !== "") {
+            const upper = v.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (upper === "NAO IDENTIFICADO" || upper === "N/A" || upper === "-" || upper === "—") {
+              return null; // skip invalid values
+            }
+            return v;
+          }
+        }
+        return null;
+      };
 
-      const dataContratoMatch = text.match(/(?:DATA DO CONTRATO|DATA CONTRATO)[:\s]*(\d+[\/.\s\-a-záéíóúã]+)/i);
-      if (dataContratoMatch) {
-        updatedForm.dataContrato = dataContratoMatch[1].trim();
-        fieldsFound.push("dataContrato");
-      }
+      // Helper: set form field only if value is valid and existing field is empty
+      const setField = (formKey, reportKeys) => {
+        const val = getVal(reportKeys);
+        if (val !== null) {
+          const currentVal = (updatedForm[formKey] || "").toString().trim();
+          if (!currentVal) {
+            updatedForm[formKey] = val;
+            fieldsFound.push(formKey);
+          } else if (currentVal !== val) {
+            skippedFields.push(formKey);
+          }
+        }
+      };
 
-      const veiculoMatch = text.match(/(?:VEÍCULO|VEICULO)[:\s]+([A-Z0-9\s\-]+?)(?:ANO|$)/i);
-      if (veiculoMatch) {
-        updatedForm.veiculo = veiculoMatch[1].trim();
-        fieldsFound.push("veiculo");
-      }
+      if (isStructuredReport) {
+        // ── PROCESSO ──
+        setField("uf", ["UF"]);
+        setField("cidade", ["Comarca"]);
 
-      const anoMatch = text.match(/(?:ANO|YEAR)[:\s]*(\d{4})/);
-      if (anoMatch) {
-        updatedForm.anoVeiculo = anoMatch[1].trim();
-        fieldsFound.push("anoVeiculo");
-      }
+        // ── AUTOR ──
+        setField("nome", ["Nome"]);
+        setField("rg", ["RG"]);
+        setField("cpf", ["CPF"]);
+        setField("nacionalidade", ["Nacionalidade"]);
+        setField("estadoCivil", ["Estado civil"]);
+        setField("profissao", ["Profiss\u00e3o", "Profissao"]);
+        setField("endereco", ["Endere\u00e7o completo", "Endereco completo", "Endere\u00e7o", "Endereco"]);
 
-      // Financial data
-      const valorPrincipalMatch = findNumbers("VALOR PRINCIPAL|PRINCIPAL");
-      if (valorPrincipalMatch) {
-        updatedForm.valorPrincipal = valorPrincipalMatch;
-        fieldsFound.push("valorPrincipal");
-      }
+        // ── BANCO / REU ──
+        setField("banco", ["Nome do banco"]);
+        setField("cnpjBanco", ["CNPJ"]);
+        setField("enderecoBanco", ["Endere\u00e7o", "Endereco"]);
 
-      const valorTotalMatch = findNumbers("VALOR TOTAL|TOTAL");
-      if (valorTotalMatch) {
-        updatedForm.valorTotal = valorTotalMatch;
-        fieldsFound.push("valorTotal");
-      }
+        // ── CONTRATO / VEICULO ──
+        setField("dataContrato", ["Data do contrato"]);
+        setField("numeroContrato", ["N\u00famero do contrato", "Numero do contrato"]);
+        setField("veiculo", ["Ve\u00edculo", "Veiculo"]);
+        setField("anoVeiculo", ["Ano"]);
+        setField("valorPrincipal", ["Valor principal financiado"]);
+        setField("valorLiquido", ["Valor l\u00edquido financiado", "Valor liquido financiado"]);
+        setField("valorTotal", ["Valor total com juros"]);
+        setField("taxaJurosContrMes", ["Juros ao m\u00eas", "Juros ao mes"]);
+        setField("taxaJurosContrAno", ["Juros ao ano"]);
+        setField("cet", ["CET"]);
+        setField("qtdParcelas", ["Quantidade de parcelas"]);
+        setField("valorParcela", ["Valor da parcela"]);
+        setField("tarifaCadastro", ["Tarifa de cadastro"]);
+        setField("tarifaAvaliacao", ["Tarifa de avalia\u00e7\u00e3o", "Tarifa de avaliacao"]);
+        setField("despesasRegistro", ["Registro"]);
+        setField("seguro", ["Seguro prestamista"]);
 
-      const taxaJurosMesMatch = findNumbers("TAXA.*MÊS|TAXA.*MES|TAXA MENSAL");
-      if (taxaJurosMesMatch) {
-        updatedForm.taxaJurosMes = taxaJurosMesMatch;
-        fieldsFound.push("taxaJurosMes");
-      }
+        // ── REVISAO / LAUDO ──
+        setField("parcelaCorreta", ["Parcela correta"]);
+        setField("valorConsignar", ["Valor a consignar"]);
+        setField("valorPagoMaior", ["Valor pago a maior"]);
+        setField("valorRestituir", ["Valor a restituir"]);
 
-      const taxaJurosAnoMatch = findNumbers("TAXA.*ANO|TAXA ANUAL");
-      if (taxaJurosAnoMatch) {
-        updatedForm.taxaJurosAno = taxaJurosAnoMatch;
-        fieldsFound.push("taxaJurosAno");
-      }
+        // ── SEGURO ──
+        setField("seguradora", ["Nome da seguradora"]);
+        setField("cnpjSeguradora", ["CNPJ"]);
+        setField("seguro", ["Valor do seguro"]);
 
-      const cetMatch = findNumbers("CET");
-      if (cetMatch) {
-        updatedForm.cet = cetMatch;
-        fieldsFound.push("cet");
-      }
+        // ── FECHAMENTO ──
+        setField("valorCausa", ["Valor da causa"]);
+        setField("data", ["Data da peti\u00e7\u00e3o", "Data da peticao"]);
+      } else {
+        // Fallback: free-form text parsing for non-structured input
+        const text = importText;
 
-      const qtdParcelasMatch = text.match(/(?:PARCELA|QTD|QUANTIDADE)[:\s]*(\d+)/);
-      if (qtdParcelasMatch) {
-        updatedForm.qtdParcelas = qtdParcelasMatch[1].trim();
-        fieldsFound.push("qtdParcelas");
-      }
+        const simpleMatch = (pattern) => {
+          const m = text.match(pattern);
+          return m ? m[1].trim() : null;
+        };
 
-      const valorParcelaMatch = findNumbers("VALOR DA PARCELA|VALOR PARCELA|PARCELA");
-      if (valorParcelaMatch) {
-        updatedForm.valorParcela = valorParcelaMatch;
-        fieldsFound.push("valorParcela");
-      }
+        const isValid = (v) => {
+          if (!v) return false;
+          const u = v.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          return u !== "NAO IDENTIFICADO" && u !== "N/A" && u !== "-" && u !== "—";
+        };
 
-      // Fees and insurance
-      const tarifaAvaliaoMatch = findNumbers("TARIFA.*AVALIAÇÃO|TARIFA.*AVALIACAO");
-      if (tarifaAvaliaoMatch) {
-        updatedForm.tarifaAvaliacao = tarifaAvaliaoMatch;
-        fieldsFound.push("tarifaAvaliacao");
-      }
+        const trySet = (formKey, val) => {
+          if (val && isValid(val)) {
+            const cur = (updatedForm[formKey] || "").toString().trim();
+            if (!cur) {
+              updatedForm[formKey] = val;
+              fieldsFound.push(formKey);
+            } else if (cur !== val) {
+              skippedFields.push(formKey);
+            }
+          }
+        };
 
-      const tarifaCadastroMatch = findNumbers("TARIFA.*CADASTRO");
-      if (tarifaCadastroMatch) {
-        updatedForm.tarifaCadastro = tarifaCadastroMatch;
-        fieldsFound.push("tarifaCadastro");
-      }
-
-      const despesasRegistroMatch = findNumbers("DESPESA|REGISTRO");
-      if (despesasRegistroMatch) {
-        updatedForm.despesasRegistro = despesasRegistroMatch;
-        fieldsFound.push("despesasRegistro");
-      }
-
-      const seguroMatch = findNumbers("SEGURO");
-      if (seguroMatch) {
-        updatedForm.seguro = seguroMatch;
-        fieldsFound.push("seguro");
-      }
-
-      const seguradoraMatch = text.match(/(?:SEGURADORA)[:\s]+([A-Z][A-Z\s]+?)(?:CNPJ|$)/i);
-      if (seguradoraMatch) {
-        updatedForm.seguradora = seguradoraMatch[1].trim();
-        fieldsFound.push("seguradora");
-      }
-
-      // Location/Court data
-      const cidadeMatch = text.match(/(?:CIDADE|DOMICÍLIO|MUNICIPIO)[:\s]+([A-Z][A-Z\s]+?)(?:UF|ESTADO|$)/i);
-      if (cidadeMatch) {
-        updatedForm.cidade = cidadeMatch[1].trim();
-        fieldsFound.push("cidade");
-      }
-
-      const ufMatch = text.match(/(?:UF|ESTADO|STATE)[:\s]*([A-Z]{2})/);
-      if (ufMatch) {
-        updatedForm.uf = ufMatch[1].trim();
-        fieldsFound.push("uf");
+        trySet("nome", simpleMatch(/Nome\s*:\s*(.+)/i));
+        trySet("rg", simpleMatch(/RG\s*:\s*(.+)/i));
+        trySet("cpf", simpleMatch(/CPF\s*:\s*(\d+[.\d-]*)/i));
+        trySet("nacionalidade", simpleMatch(/Nacionalidade\s*:\s*(.+)/i));
+        trySet("estadoCivil", simpleMatch(/Estado\s+civil\s*:\s*(.+)/i));
+        trySet("profissao", simpleMatch(/Profiss[aã]o\s*:\s*(.+)/i));
+        trySet("endereco", simpleMatch(/Endere[cç]o\s*(?:completo)?\s*:\s*(.+)/i));
+        trySet("banco", simpleMatch(/(?:Nome\s+do\s+)?[Bb]anco\s*:\s*(.+)/i));
+        trySet("cnpjBanco", simpleMatch(/CNPJ\s*:\s*(\d+[.\d\/-]*)/i));
+        trySet("uf", simpleMatch(/UF\s*:\s*([A-Z]{2})/i));
+        trySet("cidade", simpleMatch(/Comarca\s*:\s*(.+)/i));
+        trySet("dataContrato", simpleMatch(/Data\s+do\s+contrato\s*:\s*(.+)/i));
+        trySet("numeroContrato", simpleMatch(/[Nn][úu]mero\s+do\s+contrato\s*:\s*(.+)/i));
+        trySet("veiculo", simpleMatch(/Ve[ií]culo\s*:\s*(.+)/i));
+        trySet("anoVeiculo", simpleMatch(/Ano\s*:\s*(\d{4})/i));
+        trySet("valorPrincipal", simpleMatch(/Valor\s+principal\s+financiado\s*:\s*(.+)/i));
+        trySet("valorLiquido", simpleMatch(/Valor\s+l[ií]quido\s+financiado\s*:\s*(.+)/i));
+        trySet("valorTotal", simpleMatch(/Valor\s+total\s+com\s+juros\s*:\s*(.+)/i));
+        trySet("taxaJurosContrMes", simpleMatch(/Juros\s+ao\s+m[eê]s\s*:\s*(.+)/i));
+        trySet("taxaJurosContrAno", simpleMatch(/Juros\s+ao\s+ano\s*:\s*(.+)/i));
+        trySet("cet", simpleMatch(/CET\s*:\s*(.+)/i));
+        trySet("qtdParcelas", simpleMatch(/Quantidade\s+de\s+parcelas\s*:\s*(\d+)/i));
+        trySet("valorParcela", simpleMatch(/Valor\s+da\s+parcela\s*:\s*(.+)/i));
+        trySet("tarifaCadastro", simpleMatch(/Tarifa\s+de\s+cadastro\s*:\s*(.+)/i));
+        trySet("tarifaAvaliacao", simpleMatch(/Tarifa\s+de\s+avalia[cç][aã]o\s*:\s*(.+)/i));
+        trySet("despesasRegistro", simpleMatch(/Registro\s*:\s*(.+)/i));
+        trySet("seguro", simpleMatch(/Seguro\s+prestamista\s*:\s*(.+)/i));
+        trySet("parcelaCorreta", simpleMatch(/Parcela\s+correta\s*:\s*(.+)/i));
+        trySet("valorConsignar", simpleMatch(/Valor\s+a\s+consignar\s*:\s*(.+)/i));
+        trySet("valorPagoMaior", simpleMatch(/Valor\s+pago\s+a\s+maior\s*:\s*(.+)/i));
+        trySet("valorRestituir", simpleMatch(/Valor\s+a\s+restituir\s*:\s*(.+)/i));
+        trySet("seguradora", simpleMatch(/Nome\s+da\s+seguradora\s*:\s*(.+)/i));
+        trySet("cnpjSeguradora", simpleMatch(/CNPJ\s*:\s*(\d+[.\d\/-]*)/i));
+        trySet("valorCausa", simpleMatch(/Valor\s+da\s+causa\s*:\s*(.+)/i));
+        trySet("data", simpleMatch(/Data\s+da\s+peti[cç][aã]o\s*:\s*(.+)/i));
       }
 
       // Update form
       setForm(updatedForm);
 
-      // Show success message
-      const msg = `Importação concluída! ${fieldsFound.length} campo(s) preenchido(s): ${fieldsFound.join(", ")}.`;
+      // Build message
+      let msg = `Importa\u00e7\u00e3o conclu\u00edda! ${fieldsFound.length} campo(s) preenchido(s).`;
+      if (fieldsFound.length > 0) {
+        msg += ` Campos: ${fieldsFound.join(", ")}.`;
+      }
+      if (skippedFields.length > 0) {
+        msg += ` ${skippedFields.length} campo(s) preservado(s) com valor manual: ${skippedFields.join(", ")}.`;
+      }
+      if (fieldsFound.length === 0 && skippedFields.length === 0) {
+        msg = "Nenhum campo novo foi preenchido. Verifique se o relat\u00f3rio est\u00e1 no formato correto (Campo: Valor).";
+      }
       setImportMsg(msg);
 
-      // Clear import text and switch to main tab
-      setTimeout(() => {
-        setImportText("");
-        setActiveTab("gerar");
-      }, 1500);
+      // Switch to main tab after successful import
+      if (fieldsFound.length > 0) {
+        setTimeout(() => {
+          setImportText("");
+          setActiveTab("gerar");
+        }, 2000);
+      }
     } catch (err) {
-      console.error("Erro na importação:", err);
+      console.error("Erro na importa\u00e7\u00e3o:", err);
       setImportMsg("Erro ao processar o texto. Verifique o formato e tente novamente.");
     }
   };

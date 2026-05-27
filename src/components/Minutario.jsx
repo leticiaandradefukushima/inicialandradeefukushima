@@ -604,6 +604,10 @@ export default function Minutario() {
         <div style={{ fontFamily: font.sans, fontSize: "11px", color: C.textMid, textAlign: "right" }}>
           <div>{Object.keys(templates).length} teses cadastradas</div>
           <div>{Object.keys(juris).length} estados com jurisprudência</div>
+          {loadingData && <div style={{ color: C.orange, marginTop: "2px" }}>⟳ Carregando dados…</div>}
+          {!loadingData && saveStatus === "saving" && <div style={{ color: C.orange, marginTop: "2px" }}>⟳ Salvando…</div>}
+          {!loadingData && saveStatus === "saved" && <div style={{ color: "#2d8a4f", marginTop: "2px" }}>✓ Salvo</div>}
+          {!loadingData && saveStatus === "error" && <div style={{ color: "#c0392b", marginTop: "2px" }}>⚠ Erro ao salvar</div>}
         </div>
       </div>
 

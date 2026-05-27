@@ -1083,7 +1083,7 @@ export default function Minutario() {
                       <div style={{ display: "flex", gap: "8px" }}>
                         <button style={btn} onClick={() => { saveJuris({ ...juris, [uf]: { nome: editJuriNome, ...editJuriText } }); setEditingUF(null); }}>✓ Salvar</button>
                         <button style={btnOutline} onClick={() => setEditingUF(null)}>Cancelar</button>
-                        <button style={{ ...btnRed, marginLeft: "auto" }} onClick={() => { const u = { ...juris }; delete u[uf]; saveJuris(u); setEditingUF(null); }}>Excluir</button>
+                        <button style={{ ...btnRed, marginLeft: "auto" }} onClick={async () => { const u = { ...juris }; delete u[uf]; setJuris(u); try { await supabase.from("jurisprudencias").delete().eq("uf", uf); } catch (e) { console.error(e); } setEditingUF(null); }}>Excluir</button>
                       </div>
                     </div>
                   )}

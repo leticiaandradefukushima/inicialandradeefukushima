@@ -1,18 +1,31 @@
-// Emissão de petição inicial em DOCX e PDF a partir do template Word
+// Emissão de petição inicial em DOCX e PDF a partir dos templates Word oficiais
 // do escritório Andrade & Fukushima (preserva 100% da diagramação original).
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { saveAs } from "file-saver";
 
-const TEMPLATE_URL = "/template-peticao.docx";
+const TEMPLATES = {
+  "acima-bacen": "/PETICAO_INICIAL_-_ACIMA_DO_BACEN.docx",
+  "abaixo-bacen": "/PETICAO_INICIAL_-_ABAIXO_DO_BACEN.docx",
+};
 
-let templateCache = null;
-async function loadTemplate() {
-  if (templateCache) return templateCache;
-  const resp = await fetch(TEMPLATE_URL);
-  if (!resp.ok) throw new Error("Não foi possível carregar o template Word.");
-  templateCache = await resp.arrayBuffer();
-  return templateCache;
+const templateCache = {};
+
+async function loadTemplate(tese) {
+  const templateUrl = TEMPLATES[tese];
+  if (!templateUrl) {
+    throw new Error(`Tese inválida: ${tese}. Use 'acima-bacen' ou 'abaixo-bacen'.`);
+  }
+
+  if (templateCache[tese]) return templateCache[tese];
+
+  const resp = await fetch(templateUrl);
+  if (!resp.ok) {
+    throw new Error(`Não foi possível carregar o template para a tese ${tese}.`);
+  }
+
+  templateCache[tese] = await resp.arrayBuffer();
+  return templateCache[tese];
 }
 
 // Mapeia o estado do formulário + jurisprudências do estado para os placeholders
@@ -66,7 +79,7 @@ export function buildData(form, juris) {
 }
 
 async function renderDocx(form, juris) {
-  const buf = await loadTemplate();
+  const buf = await loadTemplate(form.tese);
   const zip = new PizZip(buf);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,

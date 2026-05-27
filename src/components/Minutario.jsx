@@ -317,11 +317,9 @@ export default function Minutario() {
   const [showAddJuri, setShowAddJuri] = useState(false);
   const [newJuriUF, setNewJuriUF] = useState("");
 
-  // Upload / IA
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractMsg, setExtractMsg] = useState("");
-  const fileInputRef = useRef(null);
+  // Emissão (DOCX / PDF)
+  const [isEmitting, setIsEmitting] = useState(null); // null | "docx" | "pdf"
+  const [emitMsg, setEmitMsg] = useState("");
 
   // Carrega dados do banco ao iniciar
   useEffect(() => {

@@ -283,6 +283,8 @@ export default function Minutario() {
   const [activeTab, setActiveTab] = useState("gerar");
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [juris, setJuris] = useState(DEFAULT_JURIS);
+  const [loadingData, setLoadingData] = useState(true);
+  const [saveStatus, setSaveStatus] = useState(""); // "", "saving", "saved", "error"
 
   const emptyForm = {
     tese: "acima-bacen", uf: "GO", cidade: "",
@@ -319,15 +321,79 @@ export default function Minutario() {
   const [extractMsg, setExtractMsg] = useState("");
   const fileInputRef = useRef(null);
 
+  // Carrega dados do banco ao iniciar
   useEffect(() => {
     (async () => {
-      try { const t = await window.storage.get("rev-templates-v2"); if (t) setTemplates(JSON.parse(t.value)); } catch {}
-      try { const j = await window.storage.get("rev-juris-v2"); if (j) setJuris(JSON.parse(j.value)); } catch {}
+      try {
+        const [mRes, jRes] = await Promise.all([
+          supabase.from("modelos_peticoes").select("tese, conteudo"),
+          supabase.from("jurisprudencias").select("uf, categoria, conteudo"),
+        ]);
+        if (mRes.error) throw mRes.error;
+        if (jRes.error) throw jRes.error;
+
+        if (mRes.data && mRes.data.length > 0) {
+          const map = { ...DEFAULT_TEMPLATES };
+          mRes.data.forEach((r) => { map[r.tese] = r.conteudo; });
+          setTemplates(map);
+        }
+        if (jRes.data && jRes.data.length > 0) {
+          const map = {};
+          jRes.data.forEach((r) => {
+            if (!map[r.uf]) map[r.uf] = {};
+            map[r.uf][r.categoria] = r.conteudo;
+          });
+          // mescla com defaults para UFs ainda não cadastradas
+          setJuris({ ...DEFAULT_JURIS, ...map });
+        }
+      } catch (err) {
+        console.error("Erro ao carregar dados:", err);
+        setSaveStatus("error");
+      } finally {
+        setLoadingData(false);
+      }
     })();
   }, []);
 
-  const saveTemplates = async (d) => { setTemplates(d); try { await window.storage.set("rev-templates-v2", JSON.stringify(d)); } catch {} };
-  const saveJuris = async (d) => { setJuris(d); try { await window.storage.set("rev-juris-v2", JSON.stringify(d)); } catch {} };
+  const saveTemplates = async (d) => {
+    setTemplates(d);
+    setSaveStatus("saving");
+    try {
+      const rows = Object.entries(d).map(([tese, conteudo]) => ({ tese, conteudo: conteudo ?? "" }));
+      const { error } = await supabase.from("modelos_peticoes").upsert(rows, { onConflict: "tese" });
+      if (error) throw error;
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (err) {
+      console.error("Erro ao salvar modelos:", err);
+      setSaveStatus("error");
+    }
+  };
+
+  const saveJuris = async (d) => {
+    setJuris(d);
+    setSaveStatus("saving");
+    try {
+      const rows = [];
+      Object.entries(d).forEach(([uf, cats]) => {
+        if (!cats || typeof cats !== "object") return;
+        Object.entries(cats).forEach(([categoria, conteudo]) => {
+          rows.push({ uf, categoria, conteudo: conteudo ?? "" });
+        });
+      });
+      if (rows.length > 0) {
+        const { error } = await supabase
+          .from("jurisprudencias")
+          .upsert(rows, { onConflict: "uf,categoria" });
+        if (error) throw error;
+      }
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (err) {
+      console.error("Erro ao salvar jurisprudências:", err);
+      setSaveStatus("error");
+    }
+  };
   const f = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
   // Quando troca de banco, preenche CNPJ automaticamente

@@ -1,84 +1,146 @@
 // Emissão de petição inicial em DOCX e PDF a partir dos templates Word oficiais
-// do escritório Andrade & Fukushima (preserva 100% da diagramação original).
+// do escritório Andrade & Fukushima.
+//
+// REGRA ABSOLUTA: este módulo NÃO recria, NÃO reformata e NÃO reconstrói nada.
+// Apenas abre o .docx original, substitui placeholders {KEY} pelos valores
+// preenchidos e devolve o mesmo arquivo. Toda a diagramação (negritos,
+// itálicos, tabelas, margens, fontes, cabeçalhos e rodapés) é herdada
+// integralmente do template Word.
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
-import { saveAs } from "file-saver";
+// file-saver é CommonJS — usa default import para evitar erro em SSR
+import FileSaver from "file-saver";
+const { saveAs } = FileSaver;
 
 const TEMPLATES = {
   "acima-bacen": "/PETICAO_INICIAL_-_ACIMA_DO_BACEN.docx",
   "abaixo-bacen": "/PETICAO_INICIAL_-_ABAIXO_DO_BACEN.docx",
 };
 
-const templateCache = {};
+// Placeholders presentes no template Word do escritório. Usados para validar
+// que nenhum campo ficou sem preenchimento antes da emissão.
+const TEMPLATE_KEYS_COMUNS = [
+  "NOME", "NACIONALIDADE", "ESTADO_CIVIL", "PROFISSAO", "RG", "CPF", "ENDERECO",
+  "BANCO", "CNPJ_BANCO", "ENDERECO_BANCO",
+  "CIDADE", "UF", "DATA", "DATA_CONTRATO",
+  "VEICULO", "ANO_VEICULO", "NUMERO_CONTRATO",
+  "VALOR_PRINCIPAL", "VALOR_LIQUIDO", "VALOR_TOTAL", "VALOR_PARCELA",
+  "QTD_PARCELAS", "TAXA_JUROS_MES", "TAXA_JUROS_ANO", "CET",
+  "TARIFA_CADASTRO", "TARIFA_AVALIACAO", "DESPESAS_REGISTRO",
+  "SEGURO", "SEGURADORA", "CNPJ_SEGURADORA",
+  "VALOR_CAUSA",
+  "JURIS_TARIFA_AVALIACAO", "JURIS_TARIFA_REGISTRO", "JURIS_SEGURO",
+];
+const TEMPLATE_KEYS_POR_TESE = {
+  "acima-bacen":  [...TEMPLATE_KEYS_COMUNS, "JURIS_ACIMA_BACEN", "TAXA_BACEN_MES", "TAXA_BACEN_ANO"],
+  "abaixo-bacen": [...TEMPLATE_KEYS_COMUNS],
+};
 
+const cache = {};
 async function loadTemplate(tese) {
-  const templateUrl = TEMPLATES[tese];
-  if (!templateUrl) {
-    throw new Error(`Tese inválida: ${tese}. Use 'acima-bacen' ou 'abaixo-bacen'.`);
-  }
-
-  if (templateCache[tese]) return templateCache[tese];
-
-  const resp = await fetch(templateUrl);
-  if (!resp.ok) {
-    throw new Error(`Não foi possível carregar o template para a tese ${tese}.`);
-  }
-
-  templateCache[tese] = await resp.arrayBuffer();
-  return templateCache[tese];
+  const url = TEMPLATES[tese];
+  if (!url) throw new Error(`Tese inválida: ${tese}`);
+  if (cache[tese]) return cache[tese];
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`Falha ao carregar template (${tese}): HTTP ${r.status}`);
+  cache[tese] = await r.arrayBuffer();
+  return cache[tese];
 }
 
-// Mapeia o estado do formulário + jurisprudências do estado para os placeholders
-// presentes no template (.docx pré-processado: tags no formato {CHAVE}).
+// Mapeia os campos do formulário e as jurisprudências do estado selecionado
+// para as chaves exatas do template Word.
 export function buildData(form, juris) {
   const j = (juris && juris[form.uf]) || {};
-  const fb = (v, alt) => (v && String(v).trim() ? String(v) : alt || "______");
+  const v = (x) => (x === null || x === undefined ? "" : String(x).trim());
   return {
     // Qualificação
-    NOME: fb(form.nome, "[NOME]"),
-    RG: fb(form.rg, "[RG]"),
-    CPF: fb(form.cpf, "[CPF]"),
-    ENDERECO: fb(form.endereco, "[ENDEREÇO]"),
-    BANCO: fb(form.banco, "[BANCO]"),
-    CNPJ_BANCO: fb(form.cnpjBanco, "[CNPJ]"),
-    ENDERECO_BANCO: fb(form.enderecoBanco, "[ENDEREÇO DO BANCO]"),
-    CIDADE: fb(form.cidade, "[CIDADE]"),
-    UF: fb(form.uf, "[UF]"),
-    DATA: fb(form.data, "[DATA]"),
-    DATA_CONTRATO: fb(form.dataContrato, "[DATA DO CONTRATO]"),
-    VEICULO: fb(form.veiculo, "[CARRO FINANCIADO]"),
-    ANO_VEICULO: fb(form.anoVeiculo, "[ANO]"),
-    VALOR_CAUSA: fb(form.valorCausa, "[VALOR DA CAUSA]"),
-    // Tabela – Dados essenciais do contrato
-    NUMERO_CONTRATO: fb(form.numeroContrato),
-    VALOR_PRINCIPAL: fb(form.valorPrincipal),
-    VALOR_LIQUIDO: fb(form.valorLiquido),
-    VALOR_TOTAL: fb(form.valorTotal),
-    TAXA_JUROS: fb(form.taxaJurosContrAno || form.taxaJurosContrMes),
-    CET: fb(form.cet),
-    QTD_PARCELAS: fb(form.qtdParcelas),
-    VALOR_PARCELA: fb(form.valorParcela),
-    TARIFA_AVALIACAO_TBL: fb(form.tarifaAvaliacao),
-    DESPESAS_REGISTRO: fb(form.despesasRegistro),
-    SEGURO: fb(form.seguro),
-    TARIFA_CADASTRO_TBL: fb(form.tarifaCadastro),
-    TAXA_JUROS_MES: fb(form.taxaJurosContrMes || form.taxaJurosMes),
-    TAXA_JUROS_ANO: fb(form.taxaJurosContrAno || form.taxaJurosAno),
-    CNPJ_SEGURADORA: fb(form.cnpjSeguradora),
-    // Encargos isolados
-    TARIFA_AVALIACAO: fb(form.tarifaAvaliacao),
-    TARIFA_CADASTRO: fb(form.tarifaCadastro),
-    TAXA_BACEN: fb(form.taxaBacenAno || form.taxaBacenMes),
-    SEGURADORA: fb(form.seguradora, "[SEGURADORA]"),
+    NOME: v(form.nome),
+    NACIONALIDADE: v(form.nacionalidade),
+    ESTADO_CIVIL: v(form.estadoCivil),
+    PROFISSAO: v(form.profissao),
+    RG: v(form.rg),
+    CPF: v(form.cpf),
+    ENDERECO: v(form.endereco),
+    // Banco
+    BANCO: v(form.banco),
+    CNPJ_BANCO: v(form.cnpjBanco),
+    ENDERECO_BANCO: v(form.enderecoBanco),
+    // Local / data
+    CIDADE: v(form.cidade),
+    UF: v(form.uf),
+    DATA: v(form.data),
+    DATA_CONTRATO: v(form.dataContrato),
+    // Veículo / contrato
+    VEICULO: v(form.veiculo),
+    ANO_VEICULO: v(form.anoVeiculo),
+    NUMERO_CONTRATO: v(form.numeroContrato),
+    // Valores
+    VALOR_PRINCIPAL: v(form.valorPrincipal),
+    VALOR_LIQUIDO: v(form.valorLiquido),
+    VALOR_TOTAL: v(form.valorTotal),
+    VALOR_PARCELA: v(form.valorParcela),
+    QTD_PARCELAS: v(form.qtdParcelas),
+    // Taxas do contrato
+    TAXA_JUROS_MES: v(form.taxaJurosContrMes || form.taxaJurosMes),
+    TAXA_JUROS_ANO: v(form.taxaJurosContrAno || form.taxaJurosAno),
+    CET: v(form.cet),
+    // Encargos
+    TARIFA_CADASTRO: v(form.tarifaCadastro),
+    TARIFA_AVALIACAO: v(form.tarifaAvaliacao),
+    DESPESAS_REGISTRO: v(form.despesasRegistro),
+    SEGURO: v(form.seguro),
+    SEGURADORA: v(form.seguradora),
+    CNPJ_SEGURADORA: v(form.cnpjSeguradora),
+    // Tese acima do BACEN
+    TAXA_BACEN_MES: v(form.taxaBacenMes),
+    TAXA_BACEN_ANO: v(form.taxaBacenAno),
+    // Causa
+    VALOR_CAUSA: v(form.valorCausa),
     // Jurisprudências do estado selecionado
-    JURIS_ACIMA_BACEN: fb(j.acimaBacen, "[Adicionar jurisprudência local]"),
-    JURIS_TARIFA_AVALIACAO: fb(j.tarifaAvaliacao, "[Adicionar jurisprudência local]"),
-    JURIS_TARIFA_REGISTRO: fb(j.tarifaRegistro, "[Adicionar jurisprudência local]"),
-    JURIS_SEGURO: fb(j.seguro, "[Adicionar jurisprudência local]"),
+    JURIS_ACIMA_BACEN: v(j.acimaBacen),
+    JURIS_TARIFA_AVALIACAO: v(j.tarifaAvaliacao),
+    JURIS_TARIFA_REGISTRO: v(j.tarifaRegistro),
+    JURIS_SEGURO: v(j.seguro),
   };
 }
 
+// Mapa amigável de chave do template -> rótulo legível.
+const LABEL = {
+  NOME: "Nome do cliente", NACIONALIDADE: "Nacionalidade", ESTADO_CIVIL: "Estado civil",
+  PROFISSAO: "Profissão", RG: "RG", CPF: "CPF", ENDERECO: "Endereço",
+  BANCO: "Banco réu", CNPJ_BANCO: "CNPJ do banco", ENDERECO_BANCO: "Endereço do banco",
+  CIDADE: "Cidade", UF: "UF", DATA: "Data", DATA_CONTRATO: "Data do contrato",
+  VEICULO: "Veículo financiado", ANO_VEICULO: "Ano do veículo",
+  NUMERO_CONTRATO: "Nº do contrato",
+  VALOR_PRINCIPAL: "Valor principal", VALOR_LIQUIDO: "Valor líquido",
+  VALOR_TOTAL: "Valor total", VALOR_PARCELA: "Valor da parcela",
+  QTD_PARCELAS: "Quantidade de parcelas",
+  TAXA_JUROS_MES: "Taxa de juros (mês)", TAXA_JUROS_ANO: "Taxa de juros (ano)",
+  CET: "CET", TARIFA_CADASTRO: "Tarifa de cadastro",
+  TARIFA_AVALIACAO: "Tarifa de avaliação", DESPESAS_REGISTRO: "Despesas de registro",
+  SEGURO: "Seguro", SEGURADORA: "Seguradora", CNPJ_SEGURADORA: "CNPJ da seguradora",
+  VALOR_CAUSA: "Valor da causa",
+  TAXA_BACEN_MES: "Taxa BACEN (mês)", TAXA_BACEN_ANO: "Taxa BACEN (ano)",
+  JURIS_ACIMA_BACEN: "Jurisprudência – taxa acima do BACEN",
+  JURIS_TARIFA_AVALIACAO: "Jurisprudência – tarifa de avaliação",
+  JURIS_TARIFA_REGISTRO: "Jurisprudência – despesas de registro",
+  JURIS_SEGURO: "Jurisprudência – seguro prestamista",
+};
+
+export function validateData(form, juris) {
+  const expected = TEMPLATE_KEYS_POR_TESE[form.tese] || TEMPLATE_KEYS_COMUNS;
+  const data = buildData(form, juris);
+  const missing = expected.filter((k) => !data[k]);
+  return missing.map((k) => LABEL[k] || k);
+}
+
 async function renderDocx(form, juris) {
+  const missing = validateData(form, juris);
+  if (missing.length) {
+    throw new Error(
+      "Campos faltantes para emitir a petição:\n• " + missing.join("\n• ")
+    );
+  }
   const buf = await loadTemplate(form.tese);
   const zip = new PizZip(buf);
   const doc = new Docxtemplater(zip, {
@@ -106,9 +168,9 @@ export async function emitirDOCX(form, juris) {
   saveAs(blob, `${fileBase(form)}.docx`);
 }
 
-// PDF: renderiza o .docx gerado com docx-preview em uma nova janela e
-// dispara o diálogo de impressão (Salvar como PDF). Preserva fielmente
-// fonte Arial, tabelas, cabeçalhos, rodapés e paginação do Word.
+// PDF: renderiza o .docx gerado com docx-preview em uma nova janela e dispara
+// o diálogo de impressão (Salvar como PDF). Preserva fonte, tabelas,
+// cabeçalhos, rodapés e paginação exatamente como definidos no Word.
 export async function emitirPDF(form, juris) {
   const blob = await renderDocx(form, juris);
   const { renderAsync } = await import("docx-preview");
@@ -119,11 +181,12 @@ export async function emitirPDF(form, juris) {
     <meta charset="utf-8"/>
     <title>${fileBase(form)}</title>
     <style>
-      body { margin: 0; background: #fff; font-family: Arial, sans-serif; }
+      body { margin: 0; background: #fff; }
       .docx-wrapper { background: #fff !important; padding: 0 !important; }
       .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 auto !important; }
       @media print {
         .docx-wrapper > section.docx { margin: 0 !important; box-shadow: none !important; }
+        @page { margin: 0; }
       }
     </style>
   </head><body><div id="container"></div></body></html>`);
@@ -135,16 +198,16 @@ export async function emitirPDF(form, juris) {
     inWrapper: true,
     ignoreWidth: false,
     ignoreHeight: false,
+    ignoreFonts: false,
     breakPages: true,
     experimental: true,
     useBase64URL: true,
   });
 
-  // Aguarda fontes/imagens carregarem
   if (win.document.fonts && win.document.fonts.ready) {
     try { await win.document.fonts.ready; } catch (e) { /* noop */ }
   }
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 400));
   win.focus();
   win.print();
 }

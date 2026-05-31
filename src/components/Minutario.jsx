@@ -799,7 +799,36 @@ export default function Minutario() {
                 </div>
               </div>
 
+              {/* BLOCOS A INCLUIR NA PETIÇÃO */}
+              <div style={card}>
+                <div style={cardHeader}>Blocos a incluir na petição</div>
+                <div style={cardBody}>
+                  <div style={{ fontFamily: font.sans, fontSize: "11px", color: C.textMid, marginBottom: "10px", lineHeight: 1.5 }}>
+                    Marque apenas os encargos discutidos no caso. Os blocos desmarcados
+                    são removidos da petição e da tabela “Dados essenciais do contrato”.
+                  </div>
+                  {[
+                    ["incluir_tarifa_cadastro",  "Tarifa de cadastro"],
+                    ["incluir_tarifa_avaliacao", "Tarifa de avaliação"],
+                    ["incluir_tarifa_registro",  "Despesas de registro"],
+                    ["incluir_seguro",           "Seguro prestamista"],
+                    ["incluir_cet",              "CET (linha da tabela)"],
+                  ].map(([k, label]) => (
+                    <label key={k} style={{ display: "flex", alignItems: "center", gap: "8px", fontFamily: font.sans, fontSize: "12px", color: C.textDark, padding: "6px 0", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={form[k] !== false}
+                        onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.checked }))}
+                        style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               {/* 1. DADOS DO PROCESSO */}
+
               <div style={card}>
                 <div style={cardHeader}>1. Dados do Processo</div>
                 <div style={cardBody}>

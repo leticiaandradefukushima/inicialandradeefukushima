@@ -304,6 +304,12 @@ export default function Minutario() {
     seguradora: "", cnpjSeguradora: "",
     vara: "", valorCausa: "",
     data: new Date().toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" }),
+    // Blocos condicionais (checkboxes). Default: todos ligados.
+    incluir_seguro: true,
+    incluir_tarifa_cadastro: true,
+    incluir_tarifa_avaliacao: true,
+    incluir_tarifa_registro: true,
+    incluir_cet: true,
   };
 
   const [form, setForm] = useState(emptyForm);

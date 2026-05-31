@@ -101,6 +101,12 @@ export function buildData(form, juris) {
     JURIS_TARIFA_AVALIACAO: v(j.tarifaAvaliacao),
     JURIS_TARIFA_REGISTRO: v(j.tarifaRegistro),
     JURIS_SEGURO: v(j.seguro),
+    // Flags condicionais (checkboxes). Default = true.
+    incluir_seguro:           form.incluir_seguro           !== false,
+    incluir_tarifa_cadastro:  form.incluir_tarifa_cadastro  !== false,
+    incluir_tarifa_avaliacao: form.incluir_tarifa_avaliacao !== false,
+    incluir_tarifa_registro:  form.incluir_tarifa_registro  !== false,
+    incluir_cet:              form.incluir_cet              !== false,
   };
 }
 
@@ -127,10 +133,31 @@ const LABEL = {
   JURIS_SEGURO: "Jurisprudência – seguro prestamista",
 };
 
+// Mapeia chaves de campo para o checkbox que as torna opcionais.
+// Se o checkbox estiver desmarcado, o bloco é removido do DOCX e o campo
+// correspondente deixa de ser obrigatório.
+const KEY_REQUIRES_FLAG = {
+  TARIFA_CADASTRO:        "incluir_tarifa_cadastro",
+  TARIFA_AVALIACAO:       "incluir_tarifa_avaliacao",
+  DESPESAS_REGISTRO:      "incluir_tarifa_registro",
+  SEGURO:                 "incluir_seguro",
+  SEGURADORA:             "incluir_seguro",
+  CNPJ_SEGURADORA:        "incluir_seguro",
+  CET:                    "incluir_cet",
+  JURIS_TARIFA_AVALIACAO: "incluir_tarifa_avaliacao",
+  JURIS_TARIFA_REGISTRO:  "incluir_tarifa_registro",
+  JURIS_SEGURO:           "incluir_seguro",
+};
+
 export function validateData(form, juris) {
   const expected = TEMPLATE_KEYS_POR_TESE[form.tese] || TEMPLATE_KEYS_COMUNS;
   const data = buildData(form, juris);
-  const missing = expected.filter((k) => !data[k]);
+  const missing = expected.filter((k) => {
+    if (data[k]) return false;
+    const flag = KEY_REQUIRES_FLAG[k];
+    if (flag && data[flag] === false) return false; // bloco desligado → opcional
+    return true;
+  });
   return missing.map((k) => LABEL[k] || k);
 }
 

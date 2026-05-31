@@ -101,6 +101,12 @@ export function buildData(form, juris) {
     JURIS_TARIFA_AVALIACAO: v(j.tarifaAvaliacao),
     JURIS_TARIFA_REGISTRO: v(j.tarifaRegistro),
     JURIS_SEGURO: v(j.seguro),
+    // Flags condicionais (checkboxes). Default = true.
+    incluir_seguro:           form.incluir_seguro           !== false,
+    incluir_tarifa_cadastro:  form.incluir_tarifa_cadastro  !== false,
+    incluir_tarifa_avaliacao: form.incluir_tarifa_avaliacao !== false,
+    incluir_tarifa_registro:  form.incluir_tarifa_registro  !== false,
+    incluir_cet:              form.incluir_cet              !== false,
   };
 }
 
